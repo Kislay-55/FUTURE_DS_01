@@ -1,0 +1,184 @@
+# ==============================================
+# EVENT FEEDBACK ANALYSIS – GOOGLE COLAB GUIDE
+# FINAL VERSION (COLAB GRAPHS USING PLOTLY – NO matplotlib)
+# ==============================================
+
+# -------------------------------
+# STEP 0: INSTALL & SETUP
+# -------------------------------
+!pip install -q plotly textblob nltk openpyxl
+
+import pandas as pd
+import numpy as np
+import plotly.express as px
+
+from textblob import TextBlob
+import nltk
+nltk.download('punkt')
+
+print("✅ Environment ready (Plotly enabled)")
+
+# -------------------------------
+# STEP 1: UPLOAD & LOAD DATA
+# -------------------------------
+from google.colab import files
+uploaded = files.upload()
+
+file_name = list(uploaded.keys())[0]
+print("Uploaded file:", file_name)
+
+if file_name.endswith(('.xlsx', '.xls')):
+    df = pd.read_excel(file_name)
+elif file_name.endswith('.csv'):
+    df = pd.read_csv(file_name)
+else:
+    raise ValueError("Unsupported file format. Upload CSV or Excel only.")
+
+print("Dataset shape:", df.shape)
+df.head()
+
+# -------------------------------
+# STEP 2: BASIC DATA CLEANING
+# -------------------------------
+df = df.dropna(how='all')
+df.columns = df.columns.str.strip().str.replace(' ', '_')
+
+print("Columns detected:", df.columns.tolist())
+
+# -------------------------------
+# STEP 3: IDENTIFY RATING COLUMNS (1–5)
+# -------------------------------
+rating_cols = [col for col in df.columns if df[col].dtype != 'object']
+
+# Test case
+assert len(rating_cols) > 0, "❌ No numeric rating columns found"
+
+for col in rating_cols:
+    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+print("Rating columns:", rating_cols)
+
+# -------------------------------
+# STEP 4: OVERALL SATISFACTION ANALYSIS
+# -------------------------------
+avg_ratings = df[rating_cols].mean().sort_values(ascending=False)
+
+df['Overall_Score'] = df[rating_cols].mean(axis=1)
+
+assert 'Overall_Score' in df.columns
+
+# -------------------------------
+# STEP 5: GRAPHS – RATINGS (PLOTLY)
+# -------------------------------
+
+fig_bar = px.bar(
+    x=avg_ratings.index,
+    y=avg_ratings.values,
+    title='Average Ratings by Category',
+    labels={'x': 'Category', 'y': 'Average Rating (1–5)'}
+)
+fig_bar.show()
+
+fig_hist = px.histogram(
+    df,
+    x='Overall_Score',
+    nbins=5,
+    title='Overall Satisfaction Distribution'
+)
+fig_hist.show()
+
+# -------------------------------
+# STEP 6: OPTIONAL SENTIMENT ANALYSIS
+# -------------------------------
+text_columns = [col for col in df.columns if df[col].dtype == 'object']
+sentiment_counts = None
+
+if len(text_columns) > 0:
+    comment_col = text_columns[0]
+    print("Using text column for sentiment:", comment_col)
+
+    comments_df = df[[comment_col]].dropna().copy()
+
+    def get_sentiment(text):
+        polarity = TextBlob(str(text)).sentiment.polarity
+        if polarity > 0.1:
+            return 'Positive'
+        elif polarity < -0.1:
+            return 'Negative'
+        else:
+            return 'Neutral'
+
+    comments_df['Sentiment'] = comments_df[comment_col].apply(get_sentiment)
+    sentiment_counts = comments_df['Sentiment'].value_counts()
+
+    assert 'Sentiment' in comments_df.columns
+
+    fig_pie = px.pie(
+        names=sentiment_counts.index,
+        values=sentiment_counts.values,
+        title='Feedback Sentiment Distribution'
+    )
+    fig_pie.show()
+else:
+    print("ℹ️ No text/comment column found. Sentiment analysis skipped.")
+
+# -------------------------------
+# STEP 7: INSIGHTS & PATTERNS
+# -------------------------------
+print("\nTop Strengths (High Rated):")
+print(avg_ratings.head(3))
+
+print("\nAreas to Improve (Low Rated):")
+print(avg_ratings.tail(3))
+
+# -------------------------------
+# STEP 8: RECOMMENDATIONS
+# -------------------------------
+suggestions = []
+
+if avg_ratings.min() < 3.5:
+    suggestions.append("Improve low-rated areas such as content quality or organization.")
+
+if sentiment_counts is not None and sentiment_counts.get('Negative', 0) > 0:
+    suggestions.append("Address negative feedback highlighted in comments.")
+
+suggestions.append("Maintain strengths identified in high-rated categories.")
+
+# -------------------------------
+# STEP 9: MINI REPORT / DASHBOARD
+# -------------------------------
+print("\n================ EVENT FEEDBACK MINI REPORT ================")
+print("Total Responses:", len(df))
+
+print("\n--- Average Ratings (1–5) ---")
+for k, v in avg_ratings.items():
+    print(f"{k}: {v:.2f}")
+
+print("\n--- Overall Satisfaction ---")
+print(f"Average Overall Score: {df['Overall_Score'].mean():.2f}")
+
+print("\n--- Sentiment Summary ---")
+if sentiment_counts is not None:
+    for k, v in sentiment_counts.items():
+        print(f"{k}: {v}")
+else:
+    print("No textual feedback provided")
+
+print("\n--- Key Recommendations ---")
+for s in suggestions:
+    print("•", s)
+
+print("===========================================================")
+
+# -------------------------------
+# STEP 10: EXPORT RESULTS
+# -------------------------------
+df.to_excel('feedback_analysis_output.xlsx', index=False)
+
+summary_df = pd.DataFrame({
+    'Metric': list(avg_ratings.index),
+    'Average_Rating': list(avg_ratings.values)
+})
+summary_df.to_excel('feedback_summary_report.xlsx', index=False)
+
+print("\n✅ Analysis completed successfully WITH graphs in Colab")
